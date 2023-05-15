@@ -6,35 +6,38 @@ import com.google.api.client.extensions.jetty.auth.oauth2.LocalServerReceiver;
 import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow;
 import com.google.api.client.googleapis.auth.oauth2.GoogleClientSecrets;
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
+import com.google.api.client.http.HttpRequestInitializer;
+import com.google.api.client.http.HttpTransport;
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.client.util.store.FileDataStoreFactory;
 import com.google.api.services.drive.Drive;
 import com.google.api.services.drive.DriveScopes;
-import com.google.api.services.drive.model.File;
-import com.google.api.services.drive.model.FileList;
-import com.google.api.client.http.HttpTransport;
+import com.google.auth.http.HttpCredentialsAdapter;
+import com.google.auth.oauth2.GoogleCredentials;
+import com.google.auth.oauth2.ServiceAccountCredentials;
+import com.google.api.client.auth.oauth2.BearerToken;
+import com.google.api.client.http.GenericUrl;
+import com.google.api.client.http.HttpRequestInitializer;
+import com.google.auth.http.HttpCredentialsAdapter;
 
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
+import java.io.*;
 import java.security.GeneralSecurityException;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
+
 
 /* class to demonstarte use of Drive files list API */
 public class DriveQuickstart {
     /**
      * Application name.
      */
-    private static final String APPLICATION_NAME = "Google Drive API Java Quickstart";
+    static final String APPLICATION_NAME = "Google Drive API Java Quickstart";
     /**
      * Global instance of the JSON factory.
      */
-    private static final JsonFactory JSON_FACTORY = GsonFactory.getDefaultInstance();
+    static final JsonFactory JSON_FACTORY = GsonFactory.getDefaultInstance();
     /**
      * Directory to store authorization tokens for this application.
      */
@@ -53,38 +56,43 @@ public class DriveQuickstart {
      * @return An authorized Credential object.
      * @throws IOException If the credentials.json file cannot be found.
      */
-    static Credential getCredentials(final NetHttpTransport HTTP_TRANSPORT)
-            throws IOException {
-        // Load client secrets.
-        InputStream in = DriveQuickstart.class.getResourceAsStream(CREDENTIALS_FILE_PATH);
-        if (in == null) {
-            throw new FileNotFoundException("Resource not found: " + CREDENTIALS_FILE_PATH);
+    private static final String SERVICE_ACCOUNT_KEY_FILE_PATH = "/service_account_key.json";
+
+
+    public static final NetHttpTransport HTTP_TRANSPORT;
+
+    static {
+        try {
+            HTTP_TRANSPORT = GoogleNetHttpTransport.newTrustedTransport();
+        } catch (GeneralSecurityException e) {
+            throw new RuntimeException(e);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
-        GoogleClientSecrets clientSecrets =
-                GoogleClientSecrets.load(JSON_FACTORY, new InputStreamReader(in));
-
-        // Build flow and trigger user authorization request.
-        GoogleAuthorizationCodeFlow flow = new GoogleAuthorizationCodeFlow.Builder(
-                HTTP_TRANSPORT, JSON_FACTORY, clientSecrets, SCOPES)
-                .setDataStoreFactory(new FileDataStoreFactory(new java.io.File(TOKENS_DIRECTORY_PATH)))
-                .setAccessType("offline")
-                .build();
-        LocalServerReceiver receiver = new LocalServerReceiver.Builder().setPort(8888).build();
-        Credential credential = new AuthorizationCodeInstalledApp(flow, receiver).authorize("user");
-        //returns an authorized Credential object.
-        return credential;
-
-
-
     }
 
-    public static Drive getDriveService() throws IOException, GeneralSecurityException {
-        HttpTransport httpTransport = GoogleNetHttpTransport.newTrustedTransport();
-        Credential credential = authorize(httpTransport);
-        return new Drive.Builder(httpTransport, JSON_FACTORY, credential)
+    public JsonFactory getJsonFactory() {
+        return this.JSON_FACTORY;
+    }
+
+    public NetHttpTransport getHttpTransport() {
+        return this.HTTP_TRANSPORT;
+    }
+
+    public static Drive getDriveService() throws GeneralSecurityException, IOException {
+        // Load client secrets.
+        InputStream in = DriveQuickstart.class.getResourceAsStream(SERVICE_ACCOUNT_KEY_FILE_PATH);
+        if (in == null) {
+            throw new FileNotFoundException("Resource not found: " + SERVICE_ACCOUNT_KEY_FILE_PATH);
+        }
+        GoogleCredentials credentials = ServiceAccountCredentials.fromStream(in).createScoped(SCOPES);
+
+        // Build the Drive service.
+        return new Drive.Builder(HTTP_TRANSPORT, JSON_FACTORY, new HttpCredentialsAdapter(credentials))
                 .setApplicationName(APPLICATION_NAME)
                 .build();
     }
+
 
     private static Credential authorize(HttpTransport httpTransport) throws IOException, GeneralSecurityException {
         InputStream inputStream = DriveQuickstart.class.getResourceAsStream(CREDENTIALS_FILE_PATH);

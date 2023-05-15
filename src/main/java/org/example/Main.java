@@ -1,4 +1,6 @@
 package org.example;
+import com.google.api.services.docs.v1.model.Document;
+import com.google.api.services.docs.v1.model.StructuralElement;
 import com.google.api.services.drive.Drive;
 import com.google.api.services.drive.model.File;
 
@@ -14,60 +16,57 @@ import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.util.List;
 import java.util.Scanner;
+import java.util.regex.Pattern;
+import io.javalin.Javalin;
+
 public class Main {
-
-
     public static void main(String[] args) throws IOException, GeneralSecurityException {
 
+        Drive driveService;
+        Docs docsService;
+        DriveQuickstart driveQuickstart = new DriveQuickstart();
 
-        Scanner scanner = new Scanner(System.in);
-
-        final NetHttpTransport httpTransport = GoogleNetHttpTransport.newTrustedTransport();
-        Drive driveService = new Drive.Builder(httpTransport, DriveQuickstart.getDriveService().getJsonFactory(), DriveQuickstart.getCredentials(httpTransport))
-                .setApplicationName(DriveQuickstart.getDriveService().getApplicationName())
-                .build();
-        Docs docsService = new Docs.Builder(httpTransport, DriveQuickstart.getDriveService().getJsonFactory(), DriveQuickstart.getCredentials(httpTransport))
-                .setApplicationName(DriveQuickstart.getDriveService().getApplicationName())
-                .build();
-
-
-
-            // Get character name
-            System.out.print("Enter character name: ");
-            String name = scanner.nextLine();
-
-            // Get character height
-            System.out.print("Enter character height: ");
-            String height = scanner.nextLine();
-
-            // Get character weight
-            System.out.print("Enter character weight: ");
-            String weight = scanner.nextLine();
-
-            // Get character race
-            System.out.print("Enter character race: ");
-            String race = scanner.nextLine();
-
-            // Get character class
-            System.out.print("Enter character class: ");
-            String characterClass = scanner.nextLine();
-
-            // Get character subtree
-            System.out.print("Enter character subtree: ");
-            String subtree = scanner.nextLine();
-        File file = DriveUtils.searchForFileByName(driveService, subtree);
-
-        if (file != null) {
-            // Fetch and print paragraphs starting with "Level 1:"
-            List<String> level1Paragraphs = DocsUtils.getParagraphsStartingWithLevel1(docsService, file.getId());
-            for (String paragraph : level1Paragraphs) {
-                System.out.println(paragraph);
-            }
-        } else {
-            System.out.println("File not found.");
+        try {
+            driveService = DriveQuickstart.getDriveService();
+            docsService = new Docs.Builder(driveQuickstart.getHttpTransport(), driveQuickstart.getJsonFactory(), driveService.getRequestFactory().getInitializer())
+                    .setApplicationName(DriveQuickstart.APPLICATION_NAME)
+                    .build();
+        } catch (IOException | GeneralSecurityException e) {
+            e.printStackTrace();
+            return;  // exit if a failure occurs
         }
 
-            // Get character statistics
+
+        Javalin app = Javalin.create(config -> {
+            config.enableCorsForAllOrigins();
+        }).start(7000);
+
+        app.post("/CharGen", ctx -> {
+            String name = ctx.formParam("name");
+            String height = ctx.formParam("height");
+            String weight = ctx.formParam("weight");
+            String race = ctx.formParam("race");
+            String characterClass = ctx.formParam("characterClass");
+            String subtree = ctx.formParam("subtree");
+
+            File fileRace = DriveUtils.searchForFileByName(driveService, "Races");
+            String raceInformation = null;
+            if (fileRace != null) {
+                raceInformation = DocsUtils.getRaceInformation(docsService, fileRace.getId(), race);
+            }
+
+            File fileClass = DriveUtils.searchForFileByName(driveService, characterClass + " Information");
+            List<String> classInformation = null;
+            if (fileClass != null) {
+                classInformation = DocsUtils.getParagraphsMatchingPattern(docsService, fileClass.getId(), "");
+            }
+
+            File fileSubtree = DriveUtils.searchForFileByName(driveService, subtree);
+            List<String> subtreeInformation = null;
+            if (fileSubtree != null) {
+                subtreeInformation = DocsUtils.getParagraphsMatchingPattern(docsService, fileSubtree.getId(), "Level 1 ");
+            }
+
             int[] statistics = new int[6];
             int pointsRemaining = 11;
 
@@ -75,52 +74,35 @@ public class Main {
                 String statName = "";
                 switch (i) {
                     case 0:
-                        statName = "Constitution";
+                        statName = "constitution";
                         break;
                     case 1:
-                        statName = "Strength";
+                        statName = "strength";
                         break;
                     case 2:
-                        statName = "Dexterity";
+                        statName = "dexterity";
                         break;
                     case 3:
-                        statName = "Charisma";
+                        statName = "charisma";
                         break;
                     case 4:
-                        statName = "Intellect";
+                        statName = "intellect";
                         break;
                     case 5:
-                        statName = "Wisdom";
+                        statName = "wisdom";
                         break;
                 }
-                while (true) {
-                    System.out.printf("Enter %s (1-3 points, %d points remaining): ", statName, pointsRemaining);
-                    int points = scanner.nextInt();
-                    if (points > 3 || points < 0 || points > pointsRemaining) {
-                        System.out.println("Invalid input, please try again.");
-                    } else {
-                        pointsRemaining -= points;
-                        statistics[i] = points;
-                        break;
-                    }
+
+                String statValue = ctx.formParam(statName);
+                if (statValue != null) {
+                    int points = Integer.parseInt(statValue);
+                    pointsRemaining -= points;
+                    statistics[i] = points;
                 }
             }
 
-            // Display character information
-            System.out.println("\nCharacter Information");
-            System.out.printf("Name: %s\n", name);
-            System.out.printf("Height: %s\n", height);
-            System.out.printf("Weight: %s\n", weight);
-            System.out.printf("Race: %s\n", race);
-            System.out.printf("Class: %s\n", characterClass);
-            System.out.printf("Subtree: %s\n", subtree);
-            System.out.println("Statistics:");
-            System.out.printf("Constitution: %d\n", statistics[0]);
-            System.out.printf("Strength: %d\n", statistics[1]);
-            System.out.printf("Dexterity: %d\n", statistics[2]);
-            System.out.printf("Charisma: %d\n", statistics[3]);
-            System.out.printf("Intellect: %d\n", statistics[4]);
-            System.out.printf("Wisdom: %d\n", statistics[5]);
+            Character character = new Character(name, height, weight, race, raceInformation, characterClass, classInformation, subtree, subtreeInformation, statistics);
+            ctx.json(character);
+        });
     }
-
 }
